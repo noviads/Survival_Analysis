@@ -1,0 +1,108 @@
+---
+title: "Stratified Cox"
+author: "kel 4-3sk2"
+output: html_document
+---
+## Import Data
+Stanford Heart Transplant.
+Taken from "The Statistical Analysis of Failure Time Data" by Kalbfleisch and Prentice, Appendix I, pages 230-232.
+
+Dependent variables:
+Time to event / Waktu hingga terjadinya event sejak dilakukan transplantasi.
+Status: 1=Dead (event), 0=censor
+
+Independent variables:
+X1 : Age / Umur; 
+X2 : prior surgery / Operasi sebelumnya (1: yes, 0: no); 
+X3 : waiting time for transplant  / waktu tunggu hingga transplantasi (sejak divonis medis untuk melakukan transplantasi)  (HARI/days); 
+X4 : Mismatch of Alleles / Ketidakcocokan Alel; 
+X5 : Mismatch of Antigen / Ketidakcocokan Antigen.
+
+```{r}
+library(readxl)
+heart_transplant <- read_excel("D:/My Document/stis/TK 3/semester 2/AKH/heart transplantFULL.xlsx ")
+library(survival)
+library(survminer)
+```
+
+## Kaplan Meier
+```{r}
+fit1 <- survfit(Surv(time, status) ~ 1, type="kaplan-meier",data = heart_transplant)
+summary(fit1)
+summary(fit1)$table
+plot(fit1, xlab = "days", ylab = "Survival")
+```
+
+## Cummulative Hazard ##
+```{r}
+plot(fit1, fun="cumhaz", lwd=2)
+```
+
+## Cox regression
+```{r}
+res.coxM <- coxph(Surv(time, status) ~ age + prior_surgery + waiting_time_for_transplant + Mismatch_on_alleles + Mismatch_on_antigen, data = heart_transplant)
+summary(res.coxM)
+```
+Simultaneously, p-value = 0.002 is smaller than alpha 10%. This means that the model fit.
+Age variables, prior_surgery, waiting time for transplant, and mismatch on alleles are significant at 10% alpha, while the mismatch on antigen variable is not significant at 10% alpha
+
+## test the assumption of PH
+```{r}
+check_PH <- cox.zph(res.coxM, transform = "km")
+check_PH
+```
+H0: proportional hazard assumption is met
+H1: proportional hazard assumption is not met
+
+Level of significance (alpha): 10%
+
+The categorical prior surgery variable rejects H0 at alpha 10%, meaning that the proportional Hazard assumption is not fulfilled in prior surgery categorical variables, so the Cox Proportional Hazard model cannot be used. As an alternative, it is necessary to stratify prior surgery with the stratified cox hazard model.
+
+
+
+##kaplan meier Variabel Prior_Surgery
+```{r}
+fit2 <- survfit(Surv(time, status) ~ prior_surgery, data = heart_transplant)
+print(fit2)
+summary(fit2)
+summary(fit2)$table
+plot(fit2, xlab = "days", ylab = "Survival", col=1:2)
+legend("topright", c("no", "yes"), lty = 1, col = 1:2, bty = "n")
+```
+
+## Log rank Test var prior surgery##
+```{r}
+surv_diff <- survdiff(Surv(time, status) ~ prior_surgery, data = heart_transplant)
+surv_diff
+```
+H0: Survival curve between groups is equivalent
+H1: Survival curve between groups is not equivalent (there is a difference)
+
+Level of significance (alpha): 10%
+
+P-value is less than 0.1. That is, there is enough evidence to state the difference between the category 1 survival curve (previously never carried out an operation) with the survival curve of category 2 (previously having done an operation).
+
+
+##cox stratified model
+```{r}
+res.coxStr <- coxph(Surv(time, status) ~ age + waiting_time_for_transplant + Mismatch_on_alleles + Mismatch_on_antigen + strata(prior_surgery), data = heart_transplant)
+summary(res.coxStr)
+```
+
+
+##Cox Stratified interaction model
+An interaction model allows for different coefficients for different strata
+```{r}
+res.interaction.prior <- coxph(Surv(time, status) ~ (age+waiting_time_for_transplant + Mismatch_on_alleles + Mismatch_on_antigen)*prior_surgery - prior_surgery + strata(prior_surgery),
+                               data    = heart_transplant,
+                               ties    = c("efron","breslow","exact")[1])
+summary(res.interaction.prior)
+```
+
+
+
+##test of interaction significance
+```{r}
+anova(res.interaction.prior, res.coxStr)
+```
+P-value is more than alpha (0,1). This means that the stratification model with interaction is not significant. So that the cox stratification model without interaction is used
